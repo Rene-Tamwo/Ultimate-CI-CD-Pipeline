@@ -1,0 +1,76 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: mydb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U user"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://user:pass@localhost:5432/mydb
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        working-directory: ./app-docker
+        run: npm ci
+
+      - name: Lint code
+        working-directory: ./app-docker
+        run: npm run lint
+
+      - name: Run unit tests
+        working-directory: ./app-docker
+        run: npm run test:unit
+
+      - name: Run integration tests
+        working-directory: ./app-docker
+        run: npm run test:int
+
+      - name: Run non-regression tests (snapshot)
+        working-directory: ./app-docker
+        run: npm run test:nonreg
+
+      - name: Generate code coverage report
+        working-directory: ./app-docker
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+
+      - name: Build Docker image
+        run: docker build -t myapp:latest ./app-docker
+
+      - name: Run container to verify healthcheck
+        run: |
+          docker run -d -p 3000:3000 -e DATABASE_URL=$DATABASE_URL --name app myapp:latest
+          sleep 10
+          curl -f http://localhost:3000/health
