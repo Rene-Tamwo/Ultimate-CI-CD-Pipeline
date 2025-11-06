@@ -1,27 +1,47 @@
 const request = require('supertest');
 const { Pool } = require('pg');
 
-// URL de l'API - sera override par les variables d'environnement en CI
 const API_URL = process.env.API_URL || 'http://localhost:3000';
 const TEST_DB_CONFIG = {
   user: process.env.DB_USER || 'postgres',
   host: process.env.DB_HOST || 'localhost',
-  database: process.env.DB_NAME || 'tododb',
+  database: process.env.DB_NAME || 'tododb_test',
   password: process.env.DB_PASSWORD || 'password',
   port: process.env.DB_PORT || 5432,
 };
 
 describe('Todo API Integration Tests', () => {
   let pool;
+  let server;
 
   beforeAll(async () => {
     pool = new Pool(TEST_DB_CONFIG);
-    // Attendre que la base soit prête
+    
+    // Initialiser la table de test
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS todos (
+          id SERIAL PRIMARY KEY,
+          title VARCHAR(255) NOT NULL,
+          description TEXT,
+          completed BOOLEAN DEFAULT FALSE,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      console.log('✅ Test database table ready');
+    } catch (error) {
+      console.error('❌ Test database setup failed:', error);
+      throw error;
+    }
+    
+    // Attendre que la BDD soit prête
     await new Promise(resolve => setTimeout(resolve, 2000));
-  });
+  }, 15000);
 
   afterAll(async () => {
-    await pool.end();
+    if (pool) {
+      await pool.end();
+    }
   });
 
   beforeEach(async () => {
