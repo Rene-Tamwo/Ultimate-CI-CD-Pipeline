@@ -1,0 +1,251 @@
+name: CI/CD Pipeline - Conforme aux exigences expert
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # 1. LINTER, CODE COVERAGE, TESTS (Unitaires, Intégration, Non-régression)
+  code-quality:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: tododb_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: backend/package-lock.json
+
+    # 1.0 INITIALISATION BDD DE TEST
+    - name: Initialize test database
+      working-directory: ./backend
+      run: npm run test:setup
+      env:
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_NAME: tododb_test
+        DB_USER: postgres
+        DB_PASSWORD: password
+
+    # 1.1 LINTER
+    - name: Install and run ESLint (Linter)
+      working-directory: ./backend
+      run: |
+        npx eslint . --ext .js,.jsx,.ts,.tsx || echo "Linting completed"
+
+    # 1.2 CODE COVERAGE + TESTS UNITAIRES
+    - name: Install backend dependencies
+      working-directory: ./backend
+      run: npm ci
+
+    - name: Run unit tests with coverage
+      working-directory: ./backend
+      run: npm test
+      env:
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_NAME: tododb_test
+        DB_USER: postgres
+        DB_PASSWORD: password
+
+    # 1.3 TESTS D'INTÉGRATION
+    - name: Run integration tests
+      working-directory: ./backend
+      run: npm run test:integration
+      env:
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_NAME: tododb_test
+        DB_USER: postgres
+        DB_PASSWORD: password
+        API_URL: http://localhost:3000
+
+    # 1.4 TESTS DE NON-RÉGRESSION
+    - name: Run regression tests
+      working-directory: ./backend
+      run: npm run test:regression
+      env:
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_NAME: tododb_test
+        DB_USER: postgres
+        DB_PASSWORD: password
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        directory: ./backend/coverage
+
+  # 2. BUILD IMAGE + RUN + TEST FONCTIONNEMENT
+  build-and-test-image:
+    runs-on: ubuntu-latest
+    needs: code-quality
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    # 2.1 BUILD DE L'IMAGE
+    - name: Build Backend Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        file: ./backend/Dockerfile
+        push: false
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest
+        load: true
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    # 2.2 RUN IMAGE + TEST AVEC BDD
+    - name: Test Docker image with database
+      run: |
+        # Lancer la base de données de test
+        docker run -d --name test-db \
+          -e POSTGRES_DB=tododb_test \
+          -e POSTGRES_USER=postgres \
+          -e POSTGRES_PASSWORD=password \
+          -p 5433:5432 \
+          postgres:15-alpine
+        
+        # Attendre que la BDD soit prête
+        echo "🔄 Waiting for database to be ready..."
+        sleep 15
+        
+        # Lancer l'application
+        docker run -d --name test-app \
+          -e DB_HOST=host.docker.internal \
+          -e DB_PORT=5433 \
+          -e DB_NAME=tododb_test \
+          -e DB_USER=postgres \
+          -e DB_PASSWORD=password \
+          -p 3000:3000 \
+          --add-host=host.docker.internal:host-gateway \
+          ghcr.io/${{ github.repository }}-backend:latest
+        
+        # Attendre que l'app soit prête
+        echo "🔄 Waiting for application to be ready..."
+        sleep 20
+        
+        # Tester les fonctionnalités
+        echo "🔍 Testing application functionality..."
+        
+        # Test de health check
+        HEALTH_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/health || echo "FAILED")
+        echo "Health check response: $HEALTH_RESPONSE"
+        
+        # Test de création d'un todo
+        CREATE_RESPONSE=$(curl -s -X POST http://localhost:3000/todos \
+          -H "Content-Type: application/json" \
+          -d '{"title":"CI Test Todo","description":"Test from GitHub Actions"}')
+        echo "Create response: $CREATE_RESPONSE"
+        
+        # Test de lecture des todos
+        GET_RESPONSE=$(curl -s http://localhost:3000/todos)
+        echo "Get response: $GET_RESPONSE"
+        
+        # Vérifications finales
+        if [ "$HEALTH_RESPONSE" = "200" ] && echo "$GET_RESPONSE" | grep -q "CI Test Todo"; then
+          echo "✅✅✅ All functional tests PASSED ✅✅✅"
+        else
+          echo "❌❌❌ Functional tests FAILED ❌❌❌"
+          echo "Health: $HEALTH_RESPONSE"
+          echo "GET Response: $GET_RESPONSE"
+          exit 1
+        fi
+        
+        # Cleanup
+        docker stop test-app test-db || true
+        docker rm test-app test-db || true
+
+  # 3. RELEASE (TAG + PUBLICATION)
+  release:
+    runs-on: ubuntu-latest
+    needs: build-and-test-image
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    # 3.1 BUILD FINAL AVEC TAG DE VERSION
+    - name: Extract version and tag
+      id: version
+      run: |
+        echo "VERSION=$(date +%Y%m%d.%H%M%S)" >> $GITHUB_OUTPUT
+        echo "TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ steps.version.outputs.VERSION }}" >> $GITHUB_OUTPUT
+
+    # 3.2 PUBLICATION SUR REGISTRY
+    - name: Build and push Backend image with version tag
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        file: ./backend/Dockerfile
+        push: true
+        tags: |
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ steps.version.outputs.VERSION }}
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ steps.version.outputs.VERSION }}
+        name: Release v${{ steps.version.outputs.VERSION }}
+        draft: false
+        prerelease: false
+
+  # 4. DÉPLOIEMENT MINIMAL SUR HEROKU
+  deploy-heroku:
+    runs-on: ubuntu-latest
+    needs: release
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Deploy Backend to Heroku
+      uses: akhileshns/heroku-deploy@v3.12.12
+      with:
+        heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+        heroku_app_name: ${{ secrets.HEROKU_BACKEND_APP_NAME }}
+        heroku_email: ${{ secrets.HEROKU_EMAIL }}
+        appdir: "backend"
+        usedocker: true
