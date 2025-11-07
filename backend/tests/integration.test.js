@@ -1,7 +1,8 @@
 const request = require('supertest');
 const { Pool } = require('pg');
 
-const API_URL = process.env.API_URL || 'http://localhost:3000';
+// Importer et démarrer notre serveur de test
+const server = require('../scripts/start-test-server');
 const TEST_DB_CONFIG = {
   user: process.env.DB_USER || 'postgres',
   host: process.env.DB_HOST || 'localhost',
@@ -9,6 +10,8 @@ const TEST_DB_CONFIG = {
   password: process.env.DB_PASSWORD || 'password',
   port: process.env.DB_PORT || 5432,
 };
+
+const API_URL = `http://localhost:${process.env.TEST_PORT || 3001}`;
 
 describe('Todo API Integration Tests', () => {
   let pool;
@@ -33,13 +36,19 @@ describe('Todo API Integration Tests', () => {
       throw error;
     }
     
-    // Attendre que la BDD soit prête
-    await new Promise(resolve => setTimeout(resolve, 2000));
-  }, 15000);
+    // Attendre que le serveur et la BDD soient prêts
+    await new Promise(resolve => setTimeout(resolve, 3000));
+  }, 20000);
 
   afterAll(async () => {
+    // Fermer la connexion à la BDD
     if (pool) {
       await pool.end();
+    }
+    
+    // Arrêter le serveur de test
+    if (server) {
+      server.close();
     }
   });
 
@@ -60,8 +69,8 @@ describe('Todo API Integration Tests', () => {
     
     const response = await request(API_URL)
       .post('/todos')
-      .set('Content-Type', 'application/json') // ← AJOUT IMPORTANT
-      .set('Accept', 'application/json')       // ← AJOUT IMPORTANT
+      .set('Content-Type', 'application/json')
+      .set('Accept', 'application/json')
       .send(newTodo);
 
     expect(response.status).toBe(201);
