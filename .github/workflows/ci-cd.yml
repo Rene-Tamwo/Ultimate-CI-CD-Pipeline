@@ -8,7 +8,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: ${{ github.repository | lower }}
 
 jobs:
   # 1. LINTER, CODE COVERAGE, TESTS (Unitaires, Intégration, Non-régression)
@@ -80,16 +80,32 @@ jobs:
         DB_PASSWORD: password
 
     # 1.3 TESTS D'INTÉGRATION
-    - name: Run integration tests
+    - name: Run integration tests with test server
       working-directory: ./backend
-      run: npm run test:integration -- --forceExit --detectOpenHandles
+      run: |
+        # Démarrer le serveur de test en arrière-plan
+        TEST_PORT=3001 NODE_ENV=test node scripts/start-test-server.js &
+        SERVER_PID=$!
+
+        
+        # Attendre que le serveur soit prêt
+        sleep 5
+
+        
+        # Exécuter les tests
+        npm run test:integration
+
+
+        # Arrêter le serveur
+        kill $SERVER_PID 
+        
+        
       env:
         DB_HOST: localhost
         DB_PORT: 5432
         DB_NAME: tododb_test
         DB_USER: postgres
         DB_PASSWORD: password
-        API_URL: http://localhost:3000
 
     # 1.4 TESTS DE NON-RÉGRESSION
     - name: Run regression tests
