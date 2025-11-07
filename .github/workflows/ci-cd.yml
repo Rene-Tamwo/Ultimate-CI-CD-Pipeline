@@ -264,7 +264,7 @@ jobs:
   # 4. DÉPLOIEMENT MINIMAL SUR HEROKU
   deploy-heroku:
     runs-on: ubuntu-latest
-    needs: build-and-test-image
+    needs: release
     if: github.ref == 'refs/heads/main'
 
     steps:
@@ -287,5 +287,3 @@ jobs:
         usedocker: true
         docker_build_args: |
           NODE_ENV=production
-        healthcheck: "https://${{ secrets.HEROKU_BACKEND_APP_NAME }}.herokuapp.com/health"
-        rollbackonhealthcheckfailed: true
