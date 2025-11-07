@@ -271,9 +271,10 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Deploy to Heroku with CLI
+    - name: Deploy to Heroku 
       env:
         HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        HEROKU_APP_NAME: ${{ secrets.HEROKU_BACKEND_APP_NAME }}
       run: |
         # Installer Heroku CLI
         curl https://cli-assets.heroku.com/install-ubuntu.sh | sh
@@ -287,11 +288,29 @@ jobs:
           login ${{ secrets.HEROKU_EMAIL }}
           password ${{ secrets.HEROKU_API_KEY }}
         EOF
+
+
+        chmod 600 ~/.netrc
+
         
-        # Déployer
+        # Déployer via Git
         cd backend
-        heroku container:login
-        heroku container:push web --app ${{ secrets.HEROKU_BACKEND_APP_NAME }}
-        heroku container:release web --app ${{ secrets.HEROKU_BACKEND_APP_NAME }}
-
-
+        git init
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git add .
+        git commit -m "Deploy v$(date +%Y%m%d.%H%M%S) from GitHub Actions"
+        
+        # Déployer sur Heroku
+        heroku git:remote --app $HEROKU_APP_NAME
+        git push heroku main --force
+        
+        # Attendre que l'app soit démarrée
+        sleep 10
+        
+        # Tester le déploiement
+        echo "🧪 Testing deployment..."
+        curl -f https://$HEROKU_APP_NAME.herokuapp.com/health || echo "❌ Health check failed"
+        
+        echo "✅ Déploiement Heroku réussi !"
+        echo "🌐 URL: https://$HEROKU_APP_NAME.herokuapp.com"
