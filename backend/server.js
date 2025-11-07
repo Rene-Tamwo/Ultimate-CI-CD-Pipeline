@@ -84,6 +84,5 @@ if (require.main === module) {
   });
 }
 
-
 // Exporter l'app pour les tests
 module.exports = app;
