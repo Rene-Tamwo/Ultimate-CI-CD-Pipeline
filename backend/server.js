@@ -5,13 +5,10 @@ const { Pool } = require('pg');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Configuration de la base de données avec support pour test
+// Configuration de la base de données pour Heroku
 const pool = new Pool({
-  user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  database: process.env.NODE_ENV === 'test' ? (process.env.DB_NAME || 'tododb_test') : (process.env.DB_NAME || 'tododb'),
-  password: process.env.DB_PASSWORD || 'password',
-  port: process.env.DB_PORT || 5432,
+  connectionString: process.env.DATABASE_URL || `postgres://${process.env.DB_USER || 'postgres'}:${process.env.DB_PASSWORD || 'password'}@${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || 5432}/${process.env.DB_NAME || 'tododb'}`,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
 app.use(cors());
@@ -40,7 +37,6 @@ app.get('/todos', async (req, res) => {
 app.post('/todos', async (req, res) => {
   const { title, description = '' } = req.body;
   
-  // Validation basique
   if (!title || title.trim() === '') {
     return res.status(400).json({ error: 'Title is required' });
   }
@@ -76,13 +72,10 @@ async function initDatabase() {
   }
 }
 
-// Démarrer le serveur seulement si ce n'est pas un test
-if (require.main === module) {
-  app.listen(port, async () => {
-    await initDatabase();
-    console.log(`Todo API server running on port ${port}`);
-  });
-}
+// Démarrer le serveur
+app.listen(port, async () => {
+  await initDatabase();
+  console.log(`Todo API server running on port ${port}`);
+});
 
-// Exporter l'app pour les tests
 module.exports = app;
