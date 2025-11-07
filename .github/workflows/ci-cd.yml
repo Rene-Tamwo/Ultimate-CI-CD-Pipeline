@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [ main ]
 
-env:
-  REGISTRY: ghcr.io
-
 jobs:
   # 1. LINTER, CODE COVERAGE, TESTS (Unitaires, Intégration, Non-régression)
   code-quality:
@@ -130,17 +127,20 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    # 2.1 BUILD DE L'IMAGE
+    # 2.1 BUILD DE L'IMAGE (avec conversion minuscules)
     - name: Build Backend Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: ./backend
-        file: ./backend/Dockerfile
-        push: false
-        tags: ghcr.io/${{ github.repository }}-backend:latest
-        load: true
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+      run: |
+        # Convertir le nom du repository en minuscules
+        REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+        echo "Building image: ghcr.io/${REPO_NAME}-backend:latest"
+        
+        docker buildx build \
+          --cache-from type=gha \
+          --cache-to type=gha,mode=max \
+          --file ./backend/Dockerfile \
+          --tag ghcr.io/${REPO_NAME}-backend:latest \
+          --load \
+          ./backend
 
     # 2.2 RUN IMAGE + TEST AVEC BDD
     - name: Test Docker image with database
@@ -227,32 +227,33 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
 
     # 3.1 BUILD FINAL AVEC TAG DE VERSION
-    - name: Extract version and tag
-      id: version
+    - name: Extract version and build with lowercase tags
       run: |
-        echo "VERSION=$(date +%Y%m%d.%H%M%S)" >> $GITHUB_OUTPUT
         # Convertir le nom du repository en minuscules
         REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+        VERSION=$(date +%Y%m%d.%H%M%S)
+        
+        echo "Building and pushing: ghcr.io/${REPO_NAME}-backend:${VERSION}"
+        echo "Building and pushing: ghcr.io/${REPO_NAME}-backend:latest"
+        
+        docker buildx build \
+          --cache-from type=gha \
+          --cache-to type=gha,mode=max \
+          --file ./backend/Dockerfile \
+          --tag ghcr.io/${REPO_NAME}-backend:${VERSION} \
+          --tag ghcr.io/${REPO_NAME}-backend:latest \
+          --push \
+          ./backend
+        
+        # Sauvegarder les variables pour l'étape suivante
+        echo "VERSION=${VERSION}" >> $GITHUB_ENV
         echo "REPO_NAME=${REPO_NAME}" >> $GITHUB_ENV
-
-    # 3.2 PUBLICATION SUR REGISTRY
-    - name: Build and push Backend image with version tag
-      uses: docker/build-push-action@v5
-      with:
-        context: ./backend
-        file: ./backend/Dockerfile
-        push: true
-        tags: |
-          ghcr.io/${{ env.REPO_NAME }}-backend:${{ steps.version.outputs.VERSION }}
-          ghcr.io/${{ env.REPO_NAME }}-backend:latest
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: v${{ steps.version.outputs.VERSION }}
-        name: Release v${{ steps.version.outputs.VERSION }}
+        tag_name: v${{ env.VERSION }}
+        name: Release v${{ env.VERSION }}
         draft: false
         prerelease: false
 
