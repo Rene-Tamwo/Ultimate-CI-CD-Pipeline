@@ -12,7 +12,6 @@ const TEST_DB_CONFIG = {
 
 describe('Todo API Integration Tests', () => {
   let pool;
-  let server;
 
   beforeAll(async () => {
     pool = new Pool(TEST_DB_CONFIG);
@@ -61,6 +60,8 @@ describe('Todo API Integration Tests', () => {
     
     const response = await request(API_URL)
       .post('/todos')
+      .set('Content-Type', 'application/json') // ← AJOUT IMPORTANT
+      .set('Accept', 'application/json')       // ← AJOUT IMPORTANT
       .send(newTodo);
 
     expect(response.status).toBe(201);
@@ -74,6 +75,8 @@ describe('Todo API Integration Tests', () => {
     // Créer un todo d'abord
     await request(API_URL)
       .post('/todos')
+      .set('Content-Type', 'application/json')
+      .set('Accept', 'application/json')
       .send({ title: 'Test Todo 1' });
 
     const response = await request(API_URL).get('/todos');

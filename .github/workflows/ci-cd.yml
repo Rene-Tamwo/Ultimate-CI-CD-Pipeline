@@ -82,7 +82,7 @@ jobs:
     # 1.3 TESTS D'INTÉGRATION
     - name: Run integration tests
       working-directory: ./backend
-      run: npm run test:integration
+      run: npm run test:integration -- --forceExit --detectOpenHandles
       env:
         DB_HOST: localhost
         DB_PORT: 5432
@@ -94,7 +94,7 @@ jobs:
     # 1.4 TESTS DE NON-RÉGRESSION
     - name: Run regression tests
       working-directory: ./backend
-      run: npm run test:regression
+      run: npm run test:regression -- --forceExit --detectOpenHandles
       env:
         DB_HOST: localhost
         DB_PORT: 5432
