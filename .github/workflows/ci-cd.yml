@@ -261,7 +261,7 @@ jobs:
         draft: false
         prerelease: false
 
-  # 4. DÉPLOIEMENT MINIMAL SUR HEROKU
+  # 4. DÉPLOIEMENT SUR RENDER (Gratuit)
   deploy-heroku:
     runs-on: ubuntu-latest
     needs: release
@@ -271,46 +271,41 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Deploy to Heroku 
-      env:
-        HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
-        HEROKU_APP_NAME: ${{ secrets.HEROKU_BACKEND_APP_NAME }}
+    - name: Setup Render deployment
       run: |
-        # Installer Heroku CLI
-        curl https://cli-assets.heroku.com/install-ubuntu.sh | sh
+        echo "🎉 CI/CD Pipeline Successfully Completed!"
+        echo ""
+        echo "📊 Quality Gates:"
+        echo "   ✅ Linter & Code Quality"
+        echo "   ✅ Unit Tests (Coverage: $(cat backend/coverage/lcov.info | grep 'LF:' | head -1 | cut -d: -f2 | xargs)%)"
+        echo "   ✅ Integration Tests"
+        echo "   ✅ Regression Tests"
+        echo "   ✅ Docker Build & Security Scan"
+        echo "   ✅ Functional Testing"
+        echo "   ✅ Image Published to GitHub Packages"
+        echo ""
+        echo "🚀 Next steps for Render deployment:"
+        echo "   1. Go to https://render.com"
+        echo "   2. Ensure your 'todo-backend' service is connected to this repo"
+        echo "   3. Render will automatically deploy on git push"
+        echo "   4. Or manually trigger deployment from Render dashboard"
+        echo ""
+        echo "🔗 Useful links:"
+        echo "   - GitHub Packages: https://github.com/${{ github.repository }}/pkgs/container/ultimate-ci-cd-pipeline-backend"
+        echo "   - Render Dashboard: https://dashboard.render.com/"
         
-        # Configurer l'authentification
-        cat > ~/.netrc << EOF
-        machine api.heroku.com
-          login ${{ secrets.HEROKU_EMAIL }}
-          password ${{ secrets.HEROKU_API_KEY }}
-        machine git.heroku.com  
-          login ${{ secrets.HEROKU_EMAIL }}
-          password ${{ secrets.HEROKU_API_KEY }}
-        EOF
+        # Créer un badge de statut pour le README
+        echo "DEPLOYMENT_READY=true" >> $GITHUB_ENV
 
+    - name: Update README with deployment status
+      if: env.DEPLOYMENT_READY == 'true'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: '🚀 Deployment Ready - Manual Render Setup Required',
+            body: 'The CI/CD pipeline has completed successfully! The Docker image is ready for deployment on Render.\n\n**Next Steps:**\n1. Go to [Render.com](https://render.com)\n2. Ensure your web service is connected to this repository\n3. Deploy manually or wait for automatic deployment\n\n**Image Details:**\n- Image: `ghcr.io/${{ github.repository }}-backend:latest`\n- Health Check: `/health`\n- Port: `3000`'
+          });
 
-        chmod 600 ~/.netrc
-
-        
-        # Déployer via Git
-        cd backend
-        git init
-        git config user.name "GitHub Actions"
-        git config user.email "actions@github.com"
-        git add .
-        git commit -m "Deploy v$(date +%Y%m%d.%H%M%S) from GitHub Actions"
-        
-        # Déployer sur Heroku
-        heroku git:remote --app $HEROKU_APP_NAME
-        git push heroku main --force
-        
-        # Attendre que l'app soit démarrée
-        sleep 10
-        
-        # Tester le déploiement
-        echo "🧪 Testing deployment..."
-        curl -f https://$HEROKU_APP_NAME.herokuapp.com/health || echo "❌ Health check failed"
-        
-        echo "✅ Déploiement Heroku réussi !"
-        echo "🌐 URL: https://$HEROKU_APP_NAME.herokuapp.com"

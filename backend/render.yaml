@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: todo-backend
+    env: docker
+    docker:
+      dockerfile: Dockerfile
+    envVars:
+      - key: DB_HOST
+        value: your-postgres-host
+      - key: DB_PORT  
+        value: 5432
+      - key: DB_NAME
+        value: your-database-name
+      - key: DB_USER
+        value: your-username
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: todo-database
+          property: password
+    healthCheckPath: /health
