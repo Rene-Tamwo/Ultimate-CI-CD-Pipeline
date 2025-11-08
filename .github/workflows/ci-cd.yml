@@ -271,22 +271,27 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Deploy Backend to Heroku
-      uses: akhileshns/heroku-deploy@v3.12.12
-      with:
-        heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
-        heroku_app_name: ${{ secrets.HEROKU_BACKEND_APP_NAME }}
-        heroku_email: ${{ secrets.HEROKU_EMAIL }}
-        appdir: "backend"
-        usedocker: true
-        docker_build_args: |
-          NODE_ENV=production
+    - name: Login to Heroku Container Registry
+      run: |
+        echo "${{ secrets.HEROKU_API_KEY }}" | docker login --username="${{ secrets.HEROKU_EMAIL }}" --password-stdin registry.heroku.com
 
-    - name: Deploy Frontend to Heroku
-      uses: akhileshns/heroku-deploy@v3.12.12
-      with:
-        heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
-        heroku_app_name: ${{ secrets.HEROKU_FRONTEND_APP_NAME }}
-        heroku_email: ${{ secrets.HEROKU_EMAIL }}
-        appdir: "frontend"
-        usedocker: true
+    - name: Build and push Backend to Heroku
+      run: |
+        cd backend
+        docker build -t registry.heroku.com/${{ secrets.HEROKU_BACKEND_APP_NAME }}/web .
+        docker push registry.heroku.com/${{ secrets.HEROKU_BACKEND_APP_NAME }}/web
+
+    - name: Release Backend on Heroku
+      run: |
+        docker run --rm -e HEROKU_API_KEY="${{ secrets.HEROKU_API_KEY }}" wingrunr21/alpine-heroku-cli container:release web --app ${{ secrets.HEROKU_BACKEND_APP_NAME }}
+
+    - name: Build and push Frontend to Heroku
+      run: |
+        cd frontend
+        docker build -t registry.heroku.com/${{ secrets.HEROKU_FRONTEND_APP_NAME }}/web .
+        docker push registry.heroku.com/${{ secrets.HEROKU_FRONTEND_APP_NAME }}/web
+
+    - name: Release Frontend on Heroku
+      run: |
+        docker run --rm -e HEROKU_API_KEY="${{ secrets.HEROKU_API_KEY }}" wingrunr21/alpine-heroku-cli container:release web --app ${{ secrets.HEROKU_FRONTEND_APP_NAME }}
+
