@@ -268,44 +268,20 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup Render deployment
-      run: |
-        echo "🎉 CI/CD Pipeline Successfully Completed!"
-        echo ""
-        echo "📊 Quality Gates:"
-        echo "   ✅ Linter & Code Quality"
-        echo "   ✅ Unit Tests (Coverage: $(cat backend/coverage/lcov.info | grep 'LF:' | head -1 | cut -d: -f2 | xargs)%)"
-        echo "   ✅ Integration Tests"
-        echo "   ✅ Regression Tests"
-        echo "   ✅ Docker Build & Security Scan"
-        echo "   ✅ Functional Testing"
-        echo "   ✅ Image Published to GitHub Packages"
-        echo ""
-        echo "🚀 Next steps for Render deployment:"
-        echo "   1. Go to https://render.com"
-        echo "   2. Ensure your 'todo-backend' service is connected to this repo"
-        echo "   3. Render will automatically deploy on git push"
-        echo "   4. Or manually trigger deployment from Render dashboard"
-        echo ""
-        echo "🔗 Useful links:"
-        echo "   - GitHub Packages: https://github.com/${{ github.repository }}/pkgs/container/ultimate-ci-cd-pipeline-backend"
-        echo "   - Render Dashboard: https://dashboard.render.com/"
-        
-        # Créer un badge de statut pour le README
-        echo "DEPLOYMENT_READY=true" >> $GITHUB_ENV
-
-    - name: Update README with deployment status
-      if: env.DEPLOYMENT_READY == 'true'
-      uses: actions/github-script@v6
+    - name: Deploy Backend to Heroku
+      uses: akhileshns/heroku-deploy@v3.12.12
       with:
-        script: |
-          github.rest.issues.create({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            title: '🚀 Deployment Ready - Manual Render Setup Required',
-            body: 'The CI/CD pipeline has completed successfully! The Docker image is ready for deployment on Render.\n\n**Next Steps:**\n1. Go to [Render.com](https://render.com)\n2. Ensure your web service is connected to this repository\n3. Deploy manually or wait for automatic deployment\n\n**Image Details:**\n- Image: `ghcr.io/${{ github.repository }}-backend:latest`\n- Health Check: `/health`\n- Port: `3000`'
-          });
+        heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+        heroku_app_name: ${{ secrets.HEROKU_BACKEND_APP_NAME }}
+        heroku_email: ${{ secrets.HEROKU_EMAIL }}
+        appdir: "backend"
+        usedocker: true
 
+    - name: Deploy Frontend to Heroku
+      uses: akhileshns/heroku-deploy@v3.12.12
+      with:
+        heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+        heroku_app_name: ${{ secrets.HEROKU_FRONTEND_APP_NAME }}
+        heroku_email: ${{ secrets.HEROKU_EMAIL }}
+        appdir: "frontend"
+        usedocker: true
