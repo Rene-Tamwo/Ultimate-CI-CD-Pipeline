@@ -268,6 +268,9 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
     - name: Deploy Backend to Heroku
       uses: akhileshns/heroku-deploy@v3.12.12
       with:
@@ -276,6 +279,8 @@ jobs:
         heroku_email: ${{ secrets.HEROKU_EMAIL }}
         appdir: "backend"
         usedocker: true
+        docker_build_args: |
+          NODE_ENV=production
 
     - name: Deploy Frontend to Heroku
       uses: akhileshns/heroku-deploy@v3.12.12
