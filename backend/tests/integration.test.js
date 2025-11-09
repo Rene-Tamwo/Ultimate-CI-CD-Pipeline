@@ -1,8 +1,7 @@
 const request = require('supertest');
 const { Pool } = require('pg');
+const startTestServer = require('../scripts/start-test-server');
 
-// Importer et démarrer notre serveur de test
-const server = require('../scripts/start-test-server');
 const TEST_DB_CONFIG = {
   user: process.env.DB_USER || 'postgres',
   host: process.env.DB_HOST || 'localhost',
@@ -11,54 +10,41 @@ const TEST_DB_CONFIG = {
   port: process.env.DB_PORT || 5432,
 };
 
-const API_URL = `http://localhost:${process.env.TEST_PORT || 3001}`;
-
 describe('Todo API Integration Tests', () => {
   let pool;
+  let server;
+  let baseUrl;
 
   beforeAll(async () => {
+    // Démarrer le serveur de test
+    server = await startTestServer();
+    baseUrl = `http://localhost:${process.env.TEST_PORT || 3001}`;
+
+    // Pool pour les opérations de base de données
     pool = new Pool(TEST_DB_CONFIG);
     
-    // Initialiser la table de test
-    try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS todos (
-          id SERIAL PRIMARY KEY,
-          title VARCHAR(255) NOT NULL,
-          description TEXT,
-          completed BOOLEAN DEFAULT FALSE,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-      console.log('✅ Test database table ready');
-    } catch (error) {
-      console.error('❌ Test database setup failed:', error);
-      throw error;
-    }
-    
-    // Attendre que le serveur et la BDD soient prêts
-    await new Promise(resolve => setTimeout(resolve, 3000));
-  }, 20000);
+    // Attendre que le serveur soit prêt
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }, 30000);
 
   afterAll(async () => {
-    // Fermer la connexion à la BDD
     if (pool) {
       await pool.end();
     }
-    
-    // Arrêter le serveur de test
     if (server) {
-      server.close();
+      await new Promise((resolve) => server.close(resolve));
     }
   });
 
   beforeEach(async () => {
     // Nettoyer la table avant chaque test
-    await pool.query('DELETE FROM todos');
+    if (pool) {
+      await pool.query('DELETE FROM todos');
+    }
   });
 
   test('GET /health should return 200 and database status', async () => {
-    const response = await request(API_URL).get('/health');
+    const response = await request(baseUrl).get('/health');
     expect(response.status).toBe(200);
     expect(response.body.status).toBe('OK');
     expect(response.body.database).toBe('connected');
@@ -67,10 +53,9 @@ describe('Todo API Integration Tests', () => {
   test('POST /todos should create a new todo', async () => {
     const newTodo = { title: 'Test Todo', description: 'Test Description' };
     
-    const response = await request(API_URL)
+    const response = await request(baseUrl)
       .post('/todos')
       .set('Content-Type', 'application/json')
-      .set('Accept', 'application/json')
       .send(newTodo);
 
     expect(response.status).toBe(201);
@@ -82,13 +67,12 @@ describe('Todo API Integration Tests', () => {
 
   test('GET /todos should return all todos', async () => {
     // Créer un todo d'abord
-    await request(API_URL)
+    await request(baseUrl)
       .post('/todos')
       .set('Content-Type', 'application/json')
-      .set('Accept', 'application/json')
       .send({ title: 'Test Todo 1' });
 
-    const response = await request(API_URL).get('/todos');
+    const response = await request(baseUrl).get('/todos');
     
     expect(response.status).toBe(200);
     expect(Array.isArray(response.body)).toBe(true);
