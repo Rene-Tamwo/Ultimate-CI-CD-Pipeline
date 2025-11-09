@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 
 // URL de l'API selon l'environnement
-const API_URL = window.location.hostname === 'localhost' 
-  ? 'http://localhost:3000'
-  : 'https://rene-backend-69be49503530.herokuapp.com'
+const API_URL = import.meta.env.VITE_API_URL || 
+  (window.location.hostname === 'localhost' 
+    ? 'http://localhost:3000'
+    : 'https://todo-backend.onrender.com')
 
 function App() {
   const [todos, setTodos] = useState([])
