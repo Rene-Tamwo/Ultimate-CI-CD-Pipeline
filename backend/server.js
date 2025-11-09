@@ -5,73 +5,103 @@ const { Pool } = require('pg');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Configuration de la base de données
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || `postgres://${process.env.DB_USER || 'postgres'}:${process.env.DB_PASSWORD || 'password'}@${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || 5432}/${process.env.DB_NAME || 'tododb'}`,
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
-});
+console.log('🚀 Starting Todo API...');
+console.log('PORT:', port);
+console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'Set' : 'Not set');
 
-// Configuration CORS
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'https://todo-frontend.onrender.com'
-];
+// Configuration de la base de données avec meilleure gestion d'erreur
+let pool;
 
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
-  },
-  credentials: true
-}));
+try {
+  if (process.env.DATABASE_URL) {
+    // Production - utilise DATABASE_URL de Render
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false }
+    });
+    console.log('✅ Using Render PostgreSQL database');
+  } else {
+    // Développement local
+    pool = new Pool({
+      user: process.env.DB_USER || 'postgres',
+      host: process.env.DB_HOST || 'localhost',
+      database: process.env.DB_NAME || 'tododb',
+      password: process.env.DB_PASSWORD || 'password',
+      port: process.env.DB_PORT || 5432,
+    });
+    console.log('✅ Using local PostgreSQL database');
+  }
+} catch (error) {
+  console.error('❌ Database configuration failed:', error);
+  process.exit(1);
+}
 
+// CORS permissif
+app.use(cors());
 app.use(express.json());
 
-// Health check endpoint
+// Route racine
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'Todo API is running! 🚀',
+    database: process.env.DATABASE_URL ? 'Render PostgreSQL' : 'Local PostgreSQL',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Health check amélioré
 app.get('/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.status(200).json({ status: 'OK', database: 'connected' });
+    res.json({ 
+      status: 'OK', 
+      database: 'connected',
+      environment: process.env.NODE_ENV || 'development',
+      timestamp: new Date().toISOString()
+    });
   } catch (error) {
-    res.status(500).json({ status: 'ERROR', database: 'disconnected' });
+    console.error('Health check failed:', error);
+    res.status(500).json({ 
+      status: 'ERROR', 
+      database: 'disconnected',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
-// Routes CRUD pour les todos
+// Routes todos avec gestion d'erreur
 app.get('/todos', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM todos ORDER BY id');
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('GET /todos error:', error);
+    res.status(500).json({ error: 'Database error: ' + error.message });
   }
 });
 
 app.post('/todos', async (req, res) => {
-  const { title, description = '' } = req.body;
-  
-  // Validation
-  if (!title || title.trim() === '') {
-    return res.status(400).json({ error: 'Title is required' });
-  }
-  
   try {
+    const { title, description = '' } = req.body;
+    
+    if (!title || title.trim() === '') {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+
     const result = await pool.query(
       'INSERT INTO todos (title, description, completed) VALUES ($1, $2, $3) RETURNING *',
       [title.trim(), description, false]
     );
+    
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('POST /todos error:', error);
+    res.status(500).json({ error: 'Database error: ' + error.message });
   }
 });
 
-// Initialisation de la base de données
+// Initialisation de la base de données (non bloquante)
 async function initDatabase() {
   try {
     await pool.query(`
@@ -83,21 +113,20 @@ async function initDatabase() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    if (process.env.NODE_ENV !== 'test') {
-      console.log('Database initialized');
-    }
+    console.log('✅ Database initialized successfully');
   } catch (error) {
-    console.error('Database initialization failed:', error);
+    console.error('❌ Database initialization failed:', error.message);
+    // Ne pas arrêter l'application - juste logger l'erreur
   }
 }
 
-// ⚠️ EXPORT CRITIQUE : Toujours exporter l'app
-module.exports = app;
-
-// Démarrer le serveur seulement si exécuté directement
-if (require.main === module) {
-  app.listen(port, async () => {
-    await initDatabase();
-    console.log(`Todo API server running on port ${port}`);
+// Démarrer le serveur
+app.listen(port, async () => {
+  console.log(`✅ Todo API server running on port ${port}`);
+  // Initialiser la DB en arrière-plan
+  initDatabase().then(() => {
+    console.log('📍 Health check available at: /health');
   });
-}
+});
+
+module.exports = app;
