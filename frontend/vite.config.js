@@ -7,9 +7,13 @@ export default defineConfig({
     host: true,
     port: 5173
   },
-  // Configuration pour les variables d'environnement
+  build: {
+    outDir: 'dist',
+    sourcemap: false
+  },
+  // CRITIQUE pour Render Static Sites
+  base: '/',
   define: {
     'process.env': {}
   }
 })
-
